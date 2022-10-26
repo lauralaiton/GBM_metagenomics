@@ -1,0 +1,586 @@
+# QIIME2 pipeline for 16S rRNA GBM sequences (bacteria)
+
+metadata: #Show the table with the metadata information
+	set -uex
+# Visialize metadata:
+	qiime metadata tabulate \
+ 	 --m-input-file sample-metadata.tsv \
+ 	 --o-visualization metadata-summ-1.qzv
+#  To see the results:
+	qiime tools view metadata-summ-1.qzv
+# Move file to the info_data folder:
+	mkdir -p info_data
+	mv metadata-summ-1.qzv info_data	
+
+# If each one of the file names are in the format "xxx_L[0-9][0-9][0-9]_R[12]_001.fastq.gz" then used this:
+import:
+	set -uex
+# If the data is compresed, then unzip first:
+# unzip -d name_wanted_folder name_zip_file.zip
+	qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-format CasavaOneEightSingleLanePerSampleDirFmt \
+  --input-path ~/Documents/.............. \
+  --output-path demultiplexed-sequences.qza
+	
+
+# If the seq_file names are in different format than QIIME2 examples, then use this comands to import them:
+import_with_manifest:
+# Before, it is necessay to create a .tsv file (manifest) with the paths of each file. 
+	set -uex
+	qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path ~/Documents/PENN_STATE/THESIS/Metagenomics/GBM_bacteria_data_seq/path_samples.tsv \
+  --output-path demultiplexed-sequences.qza\
+  --input-format PairedEndFastqManifestPhred33V2
+
+# Remore amplicon primers from raw sequences:
+remove_primers:
+# Trim the 341F/806R primer pair for 16S rRNA gene sequences used by Novogene facility.
+	qiime cutadapt trim-paired \
+	--i-demultiplexed-sequences demultiplexed-sequences.qza \
+	--p-cores 16 \
+	--p-front-f CCTAYGGGRBGCASCAG \
+	--p-front-r GGACTACNNGGGTATCTAAT  \
+	--o-trimmed-sequences TrimPrim_demultiplexed-sequences.qza \
+	--verbose 
+
+# Summary of the imported data with quality tests:
+summary:
+	set -uex
+	qiime demux summarize \
+	--i-data TrimPrim_demultiplexed-sequences.qza \
+	--o-visualization demultiplexed-sequences-summ.qzv 
+# To see the results:
+	qiime tools view demultiplexed-sequences-summ.qzv
+# Move file to the info_data folder:
+	mkdir -p info_data
+	mv demultiplexed-sequences-summ.qzv info_data
+
+# Perform quality control with q2-dada2 plugin:
+denoising: ###### RUN WITH DOCKER FOR M1 CHIP (Mac): docker run -t -i -v $(pwd):/data quay.io/qiime2/core:2022.2 make denoising
+# Trim all < 20 score (in the 25th box).
+# Use --p-trim-left-r xxx\ if you want to trim a part at the beggining of the sequences.
+	set -uex
+	qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs TrimPrim_demultiplexed-sequences.qza \
+  --p-trunc-len-f 225 \
+  --p-trunc-len-r 223 \
+  --o-representative-sequences asv-sequences-0.qza \
+  --o-table feature-table-0.qza \
+  --o-denoising-stats dada2-stats.qza\
+  --verbose
+
+summary_stats: 
+# 1) Run statistics: to see how many reads were filtered from each sample and why.
+	qiime metadata tabulate \
+  --m-input-file dada2-stats.qza \
+  --o-visualization dada2-stats-summ.qzv
+# 2) Build the feature TABLE: It describes which amplicon sequence variants (ASVs) were observed in which samples, and how many times each ASV was observed in each sample.
+  # This step uses the SAMPLE_METADATA file generated in the "metadata" step.
+	qiime feature-table summarize \
+  --i-table feature-table-0.qza \
+  --m-sample-metadata-file sample-metadata.tsv \
+  --o-visualization feature-table-0-summ.qzv
+# 3) Build the feature DATA: it has the sequences that define each ASV.
+	qiime feature-table tabulate-seqs \
+  --i-data asv-sequences-0.qza \
+  --o-visualization asv-sequences-0-summ.qzv
+# To see the results:
+	qiime tools view dada2-stats-summ.qzv
+	qiime tools view feature-table-0-summ.qzv
+	qiime tools view asv-sequences-0-summ.qzv
+# Move files to the info_data forlder:
+	mv dada2-stats-summ.qzv info_data
+	mv feature-table-0-summ.qzv info_data
+	mv asv-sequences-0-summ.qzv info_data
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+###### TRAINING TWO TAXONOMIC CLASSIFIERS:
+
+# I will train two classifiers using different taxonomic databases to test which classifies my sequences more accurately. 
+
+# THIS step could be omited if I use a "pre-trained Naive Bayes taxonomic classifier". In this case I have to train my own taxonomic classifier ..
+# ... because our samples are sequenced based on V3-V4 16s (341F/806R), and all current pre-trained classifiers available in Qiime2 are for V4 16S (not so accurate ).
+training_tax_class_green: 
+	set -uex
+# Train q2-feature-classifier for a particular reference dataset:
+# 1) Obtain the taxonomic reference dataset (greengenes):
+# 	Create the folder for the classifier:	  
+	mkdir -p training-feature-classifiers_green
+#	Get the sequences and taxnomic references:
+	wget -O "training-feature-classifiers_green/gg_13_8_otus.tar.gz" "ftp://greengenes.microbio.me/greengenes_release/gg_13_5/gg_13_8_otus.tar.gz" 
+	cd training-feature-classifiers_green; tar xzfv gg_13_8_otus.tar.gz
+	cd training-feature-classifiers_green; rm gg_13_8_otus.tar.gz
+#   Extract the files "99_otus.fasta" and "99_otu_taxonomy.txt" directly in the folder "training-feature-classifiers_green"
+	cd training-feature-classifiers_green/gg_13_8_otus/rep_set/; cp 99_otus.fasta ../../
+	cd training-feature-classifiers_green/gg_13_8_otus/taxonomy; cp 99_otu_taxonomy.txt ../../
+# 2) Importing references datasets (convert to qiime2 format):
+# Fasta file (sequences):
+	cd training-feature-classifiers_green;\
+	qiime tools import \
+  --type 'FeatureData[Sequence]' \
+  --input-path 99_otus.fasta \
+  --output-path 99_otus.qza
+# Taxonimic file (classification):
+	cd training-feature-classifiers_green;\
+	qiime tools import \
+	--type 'FeatureData[Taxonomy]' \
+	--input-format HeaderlessTSVTaxonomyFormat \
+	--input-path 99_otu_taxonomy.txt \
+	--output-path ref-taxonomy.qza
+# 3) Extract the V3/V4 region from the reference database: 
+# Extract reads from the reference database based on matches to the 341F/806R primer pair for 16S rRNA gene sequences:
+# Write the F and R primers used by Novogene facility.
+	cd training-feature-classifiers_green;\
+	qiime feature-classifier extract-reads \
+	--i-sequences 99_otus.qza \
+	--p-f-primer CCTAYGGGRBGCASCAG \
+	--p-r-primer GGACTACNNGGGTATCTAAT \
+	--p-min-length 100 \
+	--p-max-length 600 \
+	--o-reads ref-seqs.qza
+# 4) Train the classifier on the V3-V4 region:
+	cd training-feature-classifiers_green;\
+	qiime feature-classifier fit-classifier-naive-bayes \
+	--i-reference-reads ref-seqs.qza \
+	--i-reference-taxonomy ref-taxonomy.qza \
+	--o-classifier classifier_16S_V3-V4_green.qza
+
+#### SILVA CLASSIFIER TRAINING:
+training_tax_class_silva:
+	set -uex
+# Train q2-feature-classifier for a particular reference dataset:
+# 1) Obtain the taxonomic reference dataset (SILVA):
+# 	Create the folder for the classifier:	  
+	mkdir -p training-feature-classifiers_silva
+# 	Download the taxonomic and sequences reference dataset:
+	wget -O "training-feature-classifiers_silva/silva-138-99-seqs.qza" "https://data.qiime2.org/2022.2/common/silva-138-99-seqs.qza"
+	wget -O "training-feature-classifiers_silva/silva-138-99-tax.qza" "https://data.qiime2.org/2022.2/common/silva-138-99-tax.qza"
+# 2) Extract the V3/V4 region from the reference database: 
+# Extract reads from the reference database based on matches to the 341F/806R primer pair for 16S rRNA gene sequences:
+# Write the F and R primers used by Novogene facility.
+	cd training-feature-classifiers_silva;\
+	qiime feature-classifier extract-reads \
+	--i-sequences silva-138-99-seqs.qza \
+	--p-f-primer CCTAYGGGRBGCASCAG \
+	--p-r-primer GGACTACNNGGGTATCTAAT \
+	--p-min-length 100 \
+	--p-max-length 600 \
+	--o-reads ref-seqs_silva.qza
+# 4) Train the classifier on the V3-V4 region:
+	cd training-feature-classifiers_silva;\
+	qiime feature-classifier fit-classifier-naive-bayes \
+	--i-reference-reads ref-seqs_silva.qza \
+	--i-reference-taxonomy silva-138-99-tax.qza \
+	--o-classifier classifier_16S_V3-V4_silva.qza
+
+tax_annot:
+# After comparing the classification results using both taxonomic databases, I decided to use Greengeens.
+# 1) Assign taxonomic information to the ASV sequences using the taxonomic classifier (Classify rep seqs) "feature-classifier classify-sklearn":
+	qiime feature-classifier classify-sklearn \
+	--i-classifier training-feature-classifiers_green/classifier_16S_V3-V4_green.qza \
+	--i-reads asv-sequences-0.qza \
+	--o-classification taxonomy_green.qza
+# 2) Summary of the taxonomic annotations:
+# Tabulate the features, their taxonomy and the confidence of taxonomy assignment
+	qiime metadata tabulate \
+	--m-input-file taxonomy_green.qza \
+	--o-visualization taxonomy_green.qzv
+# 	To see the results:
+	qiime tools view taxonomy_green.qzv
+# 	Move file to the taxonomy_class folder:
+	mkdir -p taxonomy_class
+	mv taxonomy_green.qzv taxonomy_class
+
+
+filt_tax:
+# 1) Filtering based on taxonomy: This removes features that could came from the insect or plant's tissues (Eukaryote 16s Sequences):
+#	p_ includes all sequences that were assigned a phylum.
+	qiime taxa filter-table \
+	--i-table feature-table-0.qza \
+	--i-taxonomy taxonomy_green.qza \
+	--p-mode contains \
+	--p-include p__ \
+	--p-exclude 'p__;,Chloroplast,Mitochondria' \
+	--o-filtered-table filtered-table-1.qza
+# 2) Filtering based on low sequence counts: This exclude samples with low ASV sequence counts (because they didn’t amplify or sequence well)
+#   Use --p-min-frequency xxxxx as criterion to DELETE SAMPLES with less than xxxxx sequences.	
+	qiime feature-table filter-samples \
+	--i-table filtered-table-1.qza \
+	--p-min-frequency 10000 \
+	--o-filtered-table filtered-table-2.qza
+# 3) Delete the ASV sequences that are no longer represented in the table from the collection of ASV sequences:
+	qiime feature-table filter-seqs \
+	--i-data asv-sequences-0.qza \
+	--i-table filtered-table-2.qza \
+	--o-filtered-data filtered-sequences-1.qza
+# 4) Summarize the table created by the filtering:
+	qiime feature-table summarize \
+	--i-table filtered-table-2.qza \
+	--m-sample-metadata-file sample-metadata.tsv \
+	--o-visualization filtered-table-2-summ.qzv
+# 5) Generate taxonomic composition barplots: First view of the microbiome sample compositions
+	qiime taxa barplot \
+	--i-table filtered-table-2.qza \
+	--i-taxonomy taxonomy_green.qza \
+	--m-metadata-file sample-metadata.tsv \
+	--o-visualization taxa-bar-plots.qzv
+# 	To see the results:
+	qiime tools view taxa-bar-plots.qzv
+
+# Move file to the taxonomy_class folder:
+	mkdir -p taxonomy_class
+	mv taxa-bar-plots.qzv taxonomy_class
+
+phylo_tree:
+# Align sequences and build a phylogenetic tree
+# This pipeline will: 1.perform a multiple sequence alignment using mafft; 2.filter highly variable positions from the alignment (these positions tend to introduce noise into the phylogenetic tree)
+#    3.build an unrooted phylogenetic tree; 4.add a root to the unrooted tree.
+	qiime phylogeny align-to-tree-mafft-fasttree \
+	--i-sequences filtered-sequences-1.qza \
+	--output-dir phylogeny-align-to-tree-mafft-fasttree
+
+#2) Tree visualization:
+	qiime empress community-plot \
+	--i-tree phylogeny-align-to-tree-mafft-fasttree/rooted_tree.qza \
+	--i-feature-table filtered-table-2.qza \
+	--m-sample-metadata-file sample-metadata.tsv \
+	--m-feature-metadata-file taxonomy_green.qza \
+	--o-visualization empress-tree-tax-table.qzv
+#  To see the results: -- Use the different QIIME2 functions to visualize the tree as required. 
+	qiime tools view empress-tree-tax-table.qzv
+# Move file to the taxonomy_class forlder:
+	mkdir -p taxonomy_class
+	mv empress-tree-tax-table.qzv taxonomy_class 
+
+
+rarefraction:
+# Standarize the samples (for difference abundance and diversity testing) by subsampling the samples until all samples have the same features in total (total ferquency of all organisms present).
+# note: this process sometimes:
+# 1- it can eliminate whole samples because they have fewer total frequency than the minimum subsampling 
+# 2- it can eliminate species (or features ASVs) that have low sequence counts
+
+# First, explore the last feature table to define the best sampling depth (as many features as possible without lossing many samples):
+	qiime tools view filtered-table-2-summ.qzv
+	mv filtered-table-2-summ.qzv taxonomy_class
+# MY RESULT: I piked up a sampling depth of 100141 (to conserve 700,987 (87.40%) features and all samples)
+
+# 1) Alpha rarefaction plots: 
+# 	Change diversity metrics as wanted
+#	--p-max-depth should be the maximum number of features in the sample with most features. 
+#   Check the results and decide the appropriate sampling depth for diversity analysis.
+	qiime diversity alpha-rarefaction \
+  --i-table filtered-table-2.qza \
+  --p-metrics shannon \
+  --m-metadata-file sample-metadata.tsv \
+  --p-max-depth 129127 \
+  --o-visualization shannon-rarefaction-plot.qzv
+# Check the results:
+	qiime tools view shannon-rarefaction-plot.qzv
+# Move file to the diversity forlder:
+	mkdir -p diversity
+	mv shannon-rarefaction-plot.qzv diversity
+# MY RESULT:  I will used a sampling depth of 90000.
+
+# 2) Beta rarefaction plots 
+# 	Change diversity metrics as wanted (e.g., braycurtis= to calculate disimilarity btwn gruops in terms of the features)
+	qiime diversity beta-rarefaction \
+	--i-table filtered-table-2.qza \
+	--p-metric braycurtis \
+	--p-clustering-method nj \
+	--p-sampling-depth 90000 \
+	--m-metadata-file sample-metadata.tsv \
+	--o-visualization braycurtis-rarefaction-plot.qzv
+# Check the results:
+	qiime tools view braycurtis-rarefaction-plot.qzv
+# Move file to the diversity forlder:
+	mv braycurtis-rarefaction-plot.qzv diversity
+
+diversity_metrics:
+# This code computes many diversity metrics including alpha metrics, beta metrics and builts PCoA based on the computed beta metrics:
+	qiime diversity core-metrics-phylogenetic \
+  --i-phylogeny phylogeny-align-to-tree-mafft-fasttree/rooted_tree.qza \
+  --i-table filtered-table-2.qza \
+  --p-sampling-depth 90000 \
+  --m-metadata-file sample-metadata.tsv \
+  --output-dir diversity-core-metrics-phylogenetic
+
+# To Compute other diversity metrics (non-computed in the last step):
+##### Alpha diversity:
+# 1)Abundance-based Coverage Estimator (ACE) metric:
+	qiime diversity alpha \
+  --i-table filtered-table-2.qza \
+  --p-metric ace\
+  --o-alpha-diversity ace_vector.qza
+# Move file to the diversity-core-metrics forlder:
+	mv ace_vector.qza diversity-core-metrics-phylogenetic
+
+# 2) chao1 metric:
+	qiime diversity alpha \
+  --i-table filtered-table-2.qza \
+  --p-metric chao1\
+  --o-alpha-diversity chao1_vector.qza
+# Move file to the diversity-core-metrics forlder:
+	mv chao1_vector.qza diversity-core-metrics-phylogenetic
+
+# 3) fisher metric:
+	qiime diversity alpha \
+  --i-table filtered-table-2.qza \
+  --p-metric fisher_alpha\
+  --o-alpha-diversity fisher_vector.qza
+# Move file to the diversity-core-metrics forlder:
+	mv fisher_vector.qza diversity-core-metrics-phylogenetic
+
+# 5) simpson metric:
+	qiime diversity alpha \
+  --i-table filtered-table-2.qza \
+  --p-metric simpson\
+  --o-alpha-diversity simpson_vector.qza
+# Move file to the diversity-core-metrics forlder:
+	mv simpson_vector.qza diversity-core-metrics-phylogenetic
+
+alpha_div_visualizations:
+# Alpha group significance visualizations: (to see the correlations instead of significance, use: "qiime diversity alpha-correlation")
+# 1) Visualize "Observed features" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/observed_features_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization observed-features-significance.qzv
+# Check the results:
+	qiime tools view observed-features-significance.qzv
+# Move file to the diversity forlder:
+	mv observed-features-significance.qzv diversity
+
+# 2) Visualize "Shannon" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/shannon_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization shannon-significance.qzv
+# Check the results:
+	qiime tools view shannon-significance.qzv
+# Move file to the diversity forlder:
+	mv shannon-significance.qzv diversity
+
+# 3) Visualize "Faith Phylogenetic Diversity" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/faith_pd_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization Faith-Phylogenetic-Div-significance.qzv
+# Check the results:
+	qiime tools view Faith-Phylogenetic-Div-significance.qzv
+# Move file to the diversity forlder:
+	mv Faith-Phylogenetic-Div-significance.qzv diversity
+
+# 4) Visualize "Abundance-based Coverage Estimator" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/alpha-ace.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization alpha-ace-significance.qzv
+# Check the results:
+	qiime tools view alpha-ace-significance.qzv
+# Move file to the diversity forlder:
+	mv alpha-ace-significance.qzv diversity
+
+# 5) Visualize "Evenness" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/evenness_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization evenness-significance.qzv
+# Check the results:
+	qiime tools view evenness-significance.qzv
+# Move file to the diversity forlder:
+	mv evenness-significance.qzv diversity
+
+# 6) Visualize "Chao1" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/chao1_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization chao1-significance.qzv
+# Check the results:
+	qiime tools view chao1-significance.qzv
+# Move file to the diversity forlder:
+	mv chao1-significance.qzv diversity
+
+# 7) Visualize "fisher" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/fisher_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization fisher-significance.qzv
+# Check the results:
+	qiime tools view fisher-significance.qzv
+# Move file to the diversity forlder:
+	mv fisher-significance.qzv diversity
+
+# 8) Visualize "simpson" metric:
+	qiime diversity alpha-group-significance \
+  --i-alpha-diversity diversity-core-metrics-phylogenetic/simpson_vector.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --o-visualization simpson-significance.qzv
+# Check the results:
+	qiime tools view simpson-significance.qzv
+# Move file to the diversity forlder:
+	mv simpson-significance.qzv diversity
+
+
+beta_div_visualizations:
+# Beta group significance visualizations:
+# 1) Visualize "Bray-Curtis distance":
+	qiime diversity beta-group-significance \
+  --i-distance-matrix diversity-core-metrics-phylogenetic/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file sample-metadata.tsv \
+  --m-metadata-column GrapeStage \
+  --o-visualization bray-curtis-significance.qzv
+# Check the results:
+	qiime tools view bray-curtis-significance.qzv
+# Move file to the diversity forlder:
+	mv bray-curtis-significance.qzv diversity
+
+# 2) Visualize "Weighted UniFrac distance":
+	qiime diversity beta-group-significance \
+	--i-distance-matrix diversity-core-metrics-phylogenetic/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file sample-metadata.tsv \
+    --m-metadata-column GrapeStage \
+	--o-visualization weighted-unifrac-significance.qzv \
+	--p-pairwise
+# Check the results:
+	qiime tools view weighted-unifrac-significance.qzv
+# Move file to the diversity forlder:
+	mv weighted-unifrac-significance.qzv diversity
+
+# 3) Visualize "UnWeighted UniFrac distance":
+	qiime diversity beta-group-significance \
+	--i-distance-matrix diversity-core-metrics-phylogenetic/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file sample-metadata.tsv \
+    --m-metadata-column GrapeStage \
+	--o-visualization unweighted-unifrac-significance.qzv \
+	--p-pairwise
+# Check the results:
+	qiime tools view unweighted-unifrac-significance.qzv
+# Move file to the diversity forlder:
+	mv unweighted-unifrac-significance.qzv diversity
+
+##### Principal Coordinate Analysis plots visualizations:
+# 1) PCoA "Bray-Curtis distance":
+	qiime tools view diversity-core-metrics-phylogenetic/bray_curtis_emperor.qzv
+# 2) PCoA "Weighted UniFrac distance":
+	qiime tools view diversity-core-metrics-phylogenetic/weighted_unifrac_emperor.qzv
+
+
+beta_diversity_umap:   
+# UMAP is another method similar to PCoA, but more precise resolving differences between microbiome samples in ordination plots
+
+# 1) Calculate umap matrices:
+# Weighted unifrac matrix:
+	qiime diversity umap \
+	--i-distance-matrix diversity-core-metrics-phylogenetic/weighted_unifrac_distance_matrix.qza \
+	--o-umap wu-umap.qza
+# Bray-Curtis matrix:
+	qiime diversity umap \
+	--i-distance-matrix diversity-core-metrics-phylogenetic/bray_curtis_distance_matrix.qza \
+	--o-umap Bray-Curtis-umap.qza
+
+# 2) Visualize them:
+# - Weighted unifrac matrix:
+	qiime emperor plot \
+	--i-pcoa wu-umap.qza \
+	--m-metadata-file sample-metadata.tsv \
+	--o-visualization wu-umap.qzv
+# Check the results:
+	qiime tools view wu-umap.qzv
+# Move file to the diversity forlder:
+	mkdir -p diversity
+	mv wu-umap.qzv diversity
+
+# - Bray-Curtis matrix:
+	qiime emperor plot \
+	--i-pcoa Bray-Curtis-umap.qza \
+	--m-metadata-file sample-metadata.tsv \
+	--o-visualization Bray-Curtis-umap.qzv
+# Check the results:
+	qiime tools view Bray-Curtis-umap.qzv
+# Move file to the diversity forlder:
+	mkdir -p diversity
+	mv Bray-Curtis-umap.qzv diversity
+
+expanded_taxonomy_barplot:
+# 1) Integrate weighted UniFrac umap axises, Bray curtis umap, Faith PD, evenness, and Shannon diversity values in the visualization:
+	qiime metadata tabulate \
+	--m-input-file sample-metadata.tsv Bray-Curtis-umap.qza diversity-core-metrics-phylogenetic/faith_pd_vector.qza diversity-core-metrics-phylogenetic/evenness_vector.qza diversity-core-metrics-phylogenetic/shannon_vector.qza diversity-core-metrics-phylogenetic/alpha-ace.qza \
+	--o-visualization expanded-metadata-summ.qzv
+#  To see the results:
+	qiime tools view expanded-metadata-summ.qzv
+
+# 2) Generating another version of the TAXONOMY BARPLOTS with the new metadata values:
+	qiime taxa barplot \
+	--i-table filtered-table-2.qza \
+	--i-taxonomy taxonomy_green.qza \
+	--m-metadata-file sample-metadata.tsv Bray-Curtis-umap.qza diversity-core-metrics-phylogenetic/faith_pd_vector.qza diversity-core-metrics-phylogenetic/evenness_vector.qza diversity-core-metrics-phylogenetic/shannon_vector.qza \
+	--o-visualization taxa-bar-plots-expanded.qzv
+#  To see the results:
+	qiime tools view taxa-bar-plots-expanded.qzv
+# Move files to the info_data and taxonomy_class folders:
+	mv expanded-metadata-summ.qzv info_data
+	mv taxa-bar-plots-expanded.qzv taxonomy_class
+
+export_for_R:
+# Export the data files with results to visualized them in R
+	mkdir -p export
+# 1) Export unrooted tree as .nwk format:
+	qiime tools export \
+	--input-path phylogeny-align-to-tree-mafft-fasttree/tree.qza \
+	--output-path export
+
+# 2) Create a BIOM feature-table (with taxonomy annotations). (A FeatureTable[Frequency] artefact will be exported as a BIOM v2.1.0 formatted file):
+	qiime tools export \
+	--input-path filtered-table-2.qza \
+	--output-path export 	 #  The output is called "feature-table.biom"
+#    Export the BIOM to TSV table:
+	biom convert \
+	-i export/feature-table.biom \
+	-o export/feature-table.tsv \
+	--to-tsv
+
+# 3) Export Taxonomy classifications as TSV:
+	qiime tools export \
+	--input-path taxonomy_green.qza \
+	--output-path export    #  The output is called "taxonomy.tsv"
+
+# 4) Additional steps: 
+#  Delete the header lines of all the .tsv files:
+	sed '1d' export/feature-table.tsv > export/feature-table_final.tsv
+#  Convert all .tsv in csv files:
+	sed 's/\t/,/g' export/feature-table_final.tsv > export/feature-table_final.csv
+	sed 's/\t/,/g' sample-metadata.tsv > export/sample-metadata.csv
+# 	 	Taxonomy table requeres additional step to delete ";" between labels:	
+	sed 's/\t/,/g' export/taxonomy.tsv > export/taxonomy.csv
+	cut -d, -f1,2 export/taxonomy.csv > export/taxonomy_f.csv       # -f1,2 to delete column 3
+	sed 's/;/,/g' export/taxonomy_f.csv > export/taxonomy_final.csv
+#		Headers of "taxonomy_final.csv" are finally edited manually.
+
+#  Remove non-necessary .tsv files with headers:
+	rm -f export/taxonomy.tsv
+	rm -f export/taxonomy.csv
+	rm -f export/taxonomy_f.csv
+	rm -f export/feature-table.tsv
+
+export_for_PICRUSt2:
+# Export the data files with results to perform the funtional analysis with PICRUSt2.
+# 1) Export the last ASVs sequences (after taxonomic filtering) as .fasta file to use with PICRUSt2
+	mkdir -p PICRUSt2
+	qiime tools export \
+	--input-path filtered-sequences-1.qza \
+	--output-path PICRUSt2/
+
+# 2) Export the BIOM feature-table (with taxonomy annotations). (A FeatureTable[Frequency] artefact will be exported as a BIOM v2.1.0 formatted file):
+	qiime tools export \
+	--input-path filtered-table-2.qza \
+	--output-path PICRUSt2/
+# Check the .biom table:
+	biom summarize-table \
+	-i PICRUSt2/feature-table.biom
+
+PICRUSt2_run:
+# Funcional analysis:
+picrust2_pipeline.py -s PICRUSt2/dna-sequences.fasta -i PICRUSt2/feature-table.biom -o picrust2_out_pipeline -p 1
+
