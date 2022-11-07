@@ -1,0 +1,302 @@
+---
+title: "Qiime2R - GBM Bacteria"
+output: html_notebook
+---
+
+# Figure S1:
+```{r}
+# Total ASVs per sample: 
+
+ # Numbers are taken from the count of each column of the file "feature-table_final.csv", which is in the "export" file.
+ASV_data= data.frame(first_column  = c("Immature 1", "Immature 2", "Immature 3","Immature 4", "Mature 1", "Mature 2", "Mature 3"), second_column = c(583, 264, 326, 286, 332, 398, 574))
+colnames(ASV_data)=c("Sample", "ASV number")
+head(ASV_data)
+attach(ASV_data)
+
+ASV_plot=ggplot(data=ASV_data, aes(x=Sample, y=`ASV number`)) + geom_bar(stat="identity", position="dodge", width=0.5) +theme_classic()
+ggsave("ASV_plot.tiff", height=3, width=6, device="tiff")
+
+```
+
+# Figure 2:
+```{r}
+# Stacked barplots with data from qiime2-barplot:
+
+# Create a color pallet with 60 colors: 
+library(RColorBrewer)
+n <- 60
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+
+# 1) Phylum:
+Phylum_table_bp= read.csv("Phylum_barplot_data.csv")
+head(Phylum_table_bp)
+attach(Phylum_table_bp)
+library(ggplot2)
+
+Phylum_table_bp$Phylum = with(Phylum_table_bp, reorder(Phylum, -count, mean)) # order the labels
+
+Phylum_barplot=ggplot(Phylum_table_bp, aes(fill=Phylum, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+Phylum_barplot + scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format())
+
+ggsave("Fig/Phylum_barplot.tiff", height=5, width=10, device="tiff")
+
+# 2) Class:
+# Create a color pallet with 80 colors: 
+
+Class_table_bp= read.csv("Class_barplot_data.csv")
+head(Class_table_bp)
+attach(Class_table_bp)
+library(ggplot2)
+
+Class_table_bp$Class = with(Class_table_bp, reorder(Class, -count, mean)) # order the labels
+
+Class_barplot=ggplot(Class_table_bp, aes(fill=Class, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+Class_barplot + scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format())
+
+ggsave("Fig/Class_barplot_2.tiff", height=5, width=10, device="tiff")
+
+# 3) Order:
+Order_table_bp= read.csv("Order_barplot_data.csv")
+head(Order_table_bp)
+attach(Order_table_bp)
+library(ggplot2)
+
+Order_table_bp$Order = with(Order_table_bp, reorder(Order, -count, mean)) # order the labels
+
+Order_barplot=ggplot(Order_table_bp, aes(fill=Order, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+Order_barplot + scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format())
+
+ggsave("Fig/Order_barplot.tiff", height=5, width=10, device="tiff")
+
+# 4) Family:
+Family_table_bp= read.csv("Family_barplot_data.csv")
+head(Family_table_bp)
+attach(Family_table_bp)
+library(ggplot2)
+
+Family_table_bp$Family = with(Family_table_bp, reorder(Family, -count, mean)) # Order the labels
+
+Family_barplot=ggplot(Family_table_bp, aes(fill=Family, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+Family_barplot + scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format())
+
+ggsave("Fig/Family_barplot.tiff", height=5, width=10, device="tiff")
+
+# 4) Genus:
+Genus_table_bp= read.csv("Genus_barplot_data.csv")
+head(Genus_table_bp)
+attach(Genus_table_bp)
+library(ggplot2)
+
+Genus_table_bp$Genus = with(Genus_table_bp, reorder(Genus, -count, mean)) # Order the labels
+
+Genus_barplot=ggplot(Genus_table_bp, aes(fill=Genus, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+Genus_barplot + scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format())
+
+ggsave("Fig/Genus_barplot.tiff", height=5, width=10, device="tiff")
+
+
+# 5) Species:
+library(RColorBrewer)
+n <- 60
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+Species_table_bp=read.csv("Species_barplot_data_first30.csv")
+head(Species_table_bp)
+attach(Species_table_bp)
+library(ggplot2)
+
+Species_table_bp$Species = with(Species_table_bp, reorder(Species, -count, mean)) # Order the labels
+
+Species_barplot=ggplot(Species_table_bp, aes(fill=Species, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+Species_barplot + scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format())
+
+ggsave("Fig/Species_barplot.tiff", height=5, width=10, device="tiff")
+
+
+# 6) Rare Species (low frequency):
+library(RColorBrewer)
+n <- 60
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+SpeciesRare_table_bp=read.csv("Species_barplot_data_last30.csv")
+head(SpeciesRare_table_bp)
+attach(SpeciesRare_table_bp)
+library(ggplot2)
+
+SpeciesRare_table_bp$Species = with(SpeciesRare_table_bp, reorder(Species, -count, mean)) # Order the labels
+
+SpeciesRare_barplot=ggplot(SpeciesRare_table_bp, aes(fill=Species, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.6) +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank()) + 
+  theme_bw()
+SpeciesRare_barplot + scale_fill_manual(values = col_vector) + 
+  scale_y_continuous(labels=scales::percent_format())  # To add colors pallet.
+
+ggsave("Fig/SpeciesRare_barplot.tiff", height=5, width=12, device="tiff")
+
+```
+
+#Figure 5:
+```{r}
+# Install packages to work with Qiime2R:
+install.packages("usethis")
+install.packages("tidyverse")
+install.packages("devtools")
+install.packages("igraph", type="binary")
+
+# Install qiime2R package:
+# NOTE:Answer NO when prompted window asks if "reinitialize R" !!!:
+install.packages("remotes")
+remotes::install_github("jbisanz/qiime2R")
+
+# Call libraries:
+library(usethis)
+library(igraph)
+library(tidyverse)
+library(devtools)
+library(qiime2R)
+```
+
+```{r}
+# Heatmaps:
+
+# Family:
+library(tidyverse)
+library(qiime2R)
+metadata<-read_q2metadata("sample-metadata.tsv")
+SVs<-read_qza("filtered-table-2.qza")$data
+taxonomy<-read_qza("taxonomy_green.qza")$data %>% parse_taxonomy()
+
+taxasums<-summarize_taxa(SVs, taxonomy)$Family
+taxa_heatmap(taxasums, metadata, "GrapeStage")
+ggsave("heatmap_Family.tiff", height=4, width=8, device="tiff") # save a PDF 4 inches by 8 inches
+
+write.csv(taxonomy,"Taxonomy_table.csv") # Create a .csv file with the taxonomy table generated here
+
+
+# Genus:
+library(tidyverse)
+library(qiime2R)
+metadata<-read_q2metadata("sample-metadata.tsv")
+SVs<-read_qza("filtered-table-2.qza")$data
+taxonomy<-read_qza("taxonomy_green.qza")$data %>% parse_taxonomy()
+
+taxasums<-summarize_taxa(SVs, taxonomy)$Genus
+taxa_heatmap(taxasums, metadata, "GrapeStage")
+
+ggsave("Fig/heatmap_genus.tiff", height=4, width=8, device="tiff") # save a PDF 4 inches by 8 inches
+
+# Species:
+library(tidyverse)
+library(qiime2R)
+metadata<-read_q2metadata("sample-metadata.tsv")
+SVs<-read_qza("filtered-table-2.qza")$data
+taxonomy<-read_qza("taxonomy_green.qza")$data %>% parse_taxonomy()
+
+taxasums<-summarize_taxa(SVs, taxonomy)$Species
+taxa_heatmap(taxasums, metadata, "GrapeStage")
+
+ggsave("Fig/heatmap_Species.tiff", height=4, width=8, device="tiff") # save a PDF 4 inches by 8 inches
+```
+
+#Figure 8:
+```{r}
+# Alpha diversity boxplots: (data from QIIME2 statistical comparisons results)
+# Observed features: 
+observedfeat_data= data.frame(first_column  = c("Immature", "Immature", "Immature","Immature", "Mature", "Mature", "Mature"), second_column = c(578, 261,321,287, 328, 384,567))
+colnames(observedfeat_data)=c("Grape stage", "Observed features")
+head(observedfeat_data)
+attach(observedfeat_data)
+
+observedfeat_plot<-ggplot(observedfeat_data, aes(x=`Grape stage`, y=`Observed features`, color=`Grape stage`)) + geom_boxplot(width=0.2) + theme_classic()
+observedfeat_plot
+ggsave("Fig/observedfeat_plot.tiff", height=3, width=3, device="tiff")
+
+
+# Shannon: 
+shannon_data= data.frame(first_column  = c("Immature", "Immature", "Immature","Immature", "Mature", "Mature", "Mature"), second_column = c(3.7523, 2.135, 2.400, 2.075, 2.152, 1.799, 1.890))
+colnames(shannon_data)=c("Grape stage", "Shannon")
+head(shannon_data)
+attach(shannon_data)
+
+shannon_plot<-ggplot(shannon_data, aes(x=`Grape stage`, y=`Shannon`, color=`Grape stage`)) + geom_boxplot(width=0.2) + theme_classic()
+shannon_plot
+ggsave("Fig/shannon_plot.tiff", height=3, width=3, device="tiff")
+
+#Evenness:
+Evenness_data= data.frame(first_column  = c("Immature", "Immature", "Immature","Immature", "Mature", "Mature", "Mature"), second_column = c(0.4089, 0.2660, 0.2883, 0.2542, 0.2574, 0.2095, 0.2067))
+colnames(Evenness_data)=c("Grape stage", "Evenness")
+head(Evenness_data)
+attach(Evenness_data)
+
+Evenness_plot<-ggplot(Evenness_data, aes(x=`Grape stage`, y=`Evenness`, color=`Grape stage`)) + geom_boxplot(width=0.2) + theme_classic()
+Evenness_plot
+ggsave("Fig/Evenness_plot.tiff", height=3, width=3, device="tiff")
+
+
+#Chao1:
+Chao1_data= data.frame(first_column  = c("Immature", "Immature", "Immature","Immature", "Mature", "Mature", "Mature"), second_column = c(582.917, 263.965, 325.72, 289.571, 331.256, 399.4, 576.350))
+colnames(Chao1_data)=c("Grape stage", "Chao1")
+head(Chao1_data)
+attach(Chao1_data)
+
+Chao1_plot<-ggplot(Chao1_data, aes(x=`Grape stage`, y=`Chao1`, color=`Grape stage`)) + geom_boxplot(width=0.2) + theme_classic()
+Chao1_plot
+ggsave("Fig/Chao1_plot.tiff", height=3, width=3, device="tiff")
+
+#Fisher:
+Fisher_data= data.frame(first_column  = c("Immature", "Immature", "Immature","Immature", "Mature", "Mature", "Mature"), second_column = c(80.6319, 32.026, 40.898, 36.357, 41.470, 50.606, 79.395))
+colnames(Fisher_data)=c("Grape stage", "Fisher")
+head(Fisher_data)
+attach(Fisher_data)
+
+Fisher_plot<-ggplot(Fisher_data, aes(x=`Grape stage`, y=`Fisher`, color=`Grape stage`)) + geom_boxplot(width=0.2) + theme_classic()
+Fisher_plot
+ggsave("Fig/Fisher_plot.tiff", height=3, width=3, device="tiff")
+
+#Simpson:
+Simpson_data= data.frame(first_column  = c("Immature", "Immature", "Immature","Immature", "Mature", "Mature", "Mature"), second_column = c(0.8064, 0.614, 0.645, 0.496, 0.524, 0.461, 0.439))
+colnames(Simpson_data)=c("Grape stage", "Simpson")
+head(Simpson_data)
+attach(Simpson_data)
+
+Simpson_plot<-ggplot(Simpson_data, aes(x=`Grape stage`, y=`Simpson`, color=`Grape stage`)) + geom_boxplot(width=0.2) + theme_classic()
+Simpson_plot
+ggsave("Fig/Simpson_plot.tiff", height=3, width=3, device="tiff")
+
+```
