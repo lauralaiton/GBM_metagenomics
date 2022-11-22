@@ -1,5 +1,5 @@
 # GBM_metagenomics
-Pipeline used in the MSc. in Entomology thesis project **"High-throughput 16S and 18S rRNA sequencing of Grape Berry Moth, *Paralobesia viteana* (Lepidoptera: Tortricidae) larvae gut microbiome through the grape ripening process"**
+Pipeline used in the MSc. in Entomology thesis project **"Gut microbiome of grape berry moth, *Paralobesia viteana* larvae through the grape ripening process revealed by high-throughput 16S and 18S rRNA sequencing"**
 
 
 **Authors:**
