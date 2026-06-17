@@ -1,0 +1,374 @@
+---
+title: "Qiime2R - GBM Fungi"
+output: html_notebook
+---
+
+# 1) Filter the taxonomic levels: 
+
+```{r}
+library(tidyverse)
+library(qiime2R)
+metadata<-read_q2metadata("sample-metadata.tsv")
+SVs<-read_qza("filtered-table-2.qza")$data
+taxonomy<-read_qza("taxonomy_silva.qza")$data %>% parse_taxonomy()
+
+
+# Although filter was used in qiime2, some non-fungal taxa still persisted:
+###### remove Peronosporomycetes (Oomycetes, not true fungi)
+taxonomy <- read_qza("taxonomy_silva.qza")$data %>%
+  parse_taxonomy() %>%
+  filter(!grepl("Discosea",
+                paste(Phylum, Class, Order, Family), ignore.case = TRUE))
+
+###### keep only ASVs that survived the taxonomy filter
+SVs <- SVs[rownames(SVs) %in% rownames(taxonomy), ]
+
+```
+
+
+
+```{r}
+###### taxa to exclude at each level (non-fungal organisms)
+taxa_to_exclude <- list(
+  Phylum  = c("Discosea"),
+  Class = c("Discosea"),
+  Order  = c("Discosea"),
+  Family  = c("Discosea"),
+  Genus  = character(0),
+  Species = character(0)
+)
+
+remove_contaminants <- function(df, level) {
+  excl <- taxa_to_exclude[[level]]
+  if (length(excl) == 0) return(df)
+  df %>% filter(!(.data[[level]] %in% excl))
+}
+
+# Filter the tables:
+Phylum_table_bp  <- read.csv("Phylum_barplot_data.csv") %>% remove_contaminants("Phylum")
+Class_table_bp <- read.csv("Class_barplot_data.csv") %>% remove_contaminants("Class")
+Order_table_bp <- read.csv("Order_barplot_data.csv") %>% remove_contaminants("Order")
+Family_table_bp <- read.csv("Family_barplot_data.csv")  %>% remove_contaminants("Family")
+Genus_table_bp <- read.csv("Genus_barplot_data.csv") %>% remove_contaminants("Genus")
+Species_table_bp <- read.csv("Species_barplot_data.csv") %>% remove_contaminants("Species")
+
+```
+
+
+```{r}
+###### count unique taxa per level from filtered taxonomy and SVs
+
+# only keep taxonomy rows for ASVs present in SVs
+taxonomy_filtered <- taxonomy[rownames(taxonomy) %in% rownames(SVs), ]
+
+levels <- c("Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+cat("Unique taxa per level (after filter):\n")
+for (lvl in levels) {
+  if (lvl %in% colnames(taxonomy_filtered)) {
+    n <- length(unique(taxonomy_filtered[[lvl]]))
+    cat(" ", lvl, ":", n, "\n")
+  }
+}
+
+cat("\nTotal ASVs in filtered feature table:", nrow(SVs), "\n")
+```
+
+
+
+
+# 2) Heatmaps:
+
+```{r}
+# HEATMAP
+
+# Family:
+taxasums<-summarize_taxa(SVs, taxonomy)$Family
+taxa_heatmap(taxasums, metadata, "Grape-stage")
+ggsave("Fig/heatmap_Family_2.tiff", height=4, width=8, device="tiff")
+
+# Genus:
+taxasums<-summarize_taxa(SVs, taxonomy)$Genus
+taxa_heatmap(taxasums, metadata, "Grape-stage")
+ggsave("Fig/heatmap_genus_2.tiff", height=4, width=9, device="tiff")
+
+
+```
+
+
+# 3) Bar charts:
+
+```{r}
+# Stacked barplots with data from qiime2-barplot:
+
+library(Polychrome)
+# Generate 35 distinct colors from 3 seed colors
+pal <- createPalette( 35, seedcolors = c("#FF0000", "#0000FF", "#00FF00")) # red, blue, green
+col_vector <- unname(pal)
+# Preview the palette
+swatch(col_vector)
+#Remove names from the vector
+col_vector <- unname(pal)  
+
+
+# 1) Phylum:
+head(Phylum_table_bp)
+attach(Phylum_table_bp)
+library(ggplot2)
+
+# Create a new column for grape stage:
+Phylum_table_bp$Group <- ifelse(grepl("Immature-[1234]", index), "Immature", 
+                              ifelse(grepl("Mature-[1234]", index), "Mature", NA))
+Phylum_table_bp$Phylum = with(Phylum_table_bp, reorder(Phylum, -count, mean)) # order the labels
+
+
+Phylum_barplot=ggplot(Phylum_table_bp, aes(fill=Phylum, y=count, x=index)) +
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.9) +
+  scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format()) + 
+  facet_wrap(~Group, scales = "free_x")+ #Grouping by grape stage 
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) 
+
+Phylum_barplot
+ggsave("Fig/Phylum_barplot2.tiff", height=4.6, width=7, device="tiff")
+```
+
+
+```{r}
+# 2) Class:
+head(Class_table_bp)
+attach(Class_table_bp)
+library(ggplot2)
+
+# Create a new column for grape stage:
+Class_table_bp$Group <- ifelse(grepl("Immature-[1234]", index), "Immature", 
+                              ifelse(grepl("Mature-[1234]", index), "Mature", NA))
+Class_table_bp$Class = with(Class_table_bp, reorder(Class, -count, mean)) # order the labels
+
+Class_barplot=ggplot(Class_table_bp, aes(fill=Class, y=count, x=index)) +
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.9) +
+  scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format()) + 
+  facet_wrap(~Group, scales = "free_x")+ #Grouping by grape stage 
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  guides(fill = guide_legend(ncol = 2))
+
+Class_barplot
+
+ggsave("Fig/Class_barplot2.tiff", height=4, width=6, device="tiff")
+```
+
+
+```{r}
+# 3) Order:
+head(Order_table_bp)
+attach(Order_table_bp)
+library(ggplot2)
+
+# Create a new column for grape stage:
+Order_table_bp$Group <- ifelse(grepl("Immature-[1234]", index), "Immature", 
+                              ifelse(grepl("Mature-[1234]", index), "Mature", NA))
+
+Order_table_bp$Order = with(Order_table_bp, reorder(Order, -count, mean)) # order the labels
+
+Order_barplot=ggplot(Order_table_bp, aes(fill=Order, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.9) +
+  scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format()) + 
+  facet_wrap(~Group, scales = "free_x")+ #Grouping by grape stage 
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+Order_barplot
+ggsave("Fig/Order_barplot2.tiff", height=5, width=8, device="tiff")
+```
+
+
+```{r}
+# 4) Family:
+head(Family_table_bp)
+attach(Family_table_bp)
+library(ggplot2)
+
+# Create a new column for grape stage:
+Family_table_bp$Group <- ifelse(grepl("Immature-[1234]", index), "Immature", 
+                              ifelse(grepl("Mature-[1234]", index), "Mature", NA))
+
+Family_table_bp$Family = with(Family_table_bp, reorder(Family, -count, mean)) # Order the labels
+
+Family_barplot=ggplot(Family_table_bp, aes(fill=Family, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.9) +
+  scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format()) + 
+  facet_wrap(~Group, scales = "free_x")+ #Grouping by grape stage 
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+Family_barplot
+ggsave("Fig/Family_barplot2.tiff", height=5, width=8.25, device="tiff")
+```
+
+
+```{r}
+# 5) Genus:
+head(Genus_table_bp)
+attach(Genus_table_bp)
+library(ggplot2)
+
+# Create a new column for grape stage:
+Genus_table_bp$Group <- ifelse(grepl("Immature-[1234]", index), "Immature", 
+                              ifelse(grepl("Mature-[1234]", index), "Mature", NA))
+Genus_table_bp$Genus = with(Genus_table_bp, reorder(Genus, -count, mean)) # Order the labels
+
+Genus_barplot=ggplot(Genus_table_bp, aes(fill=Genus, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.9) +
+  scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format()) + 
+  facet_wrap(~Group, scales = "free_x")+ #Grouping by grape stage 
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        legend.text = element_text(face = "italic")) 
+    
+
+Genus_barplot
+ggsave("Fig/Genus_barplot2.tiff", height=5, width=8, device="tiff")
+```
+
+
+```{r}
+# 6) Species:
+head(Species_table_bp)
+attach(Species_table_bp)
+library(ggplot2)
+# Create a new column for grape stage:
+Species_table_bp$Group <- ifelse(grepl("Immature-[1234]", index), "Immature", 
+                              ifelse(grepl("Mature-[1234]", index), "Mature", NA))
+Species_table_bp$Species = with(Species_table_bp, reorder(Species, -count, mean)) # Order the labels
+
+Species_barplot=ggplot(Species_table_bp, aes(fill=Species, y=count, x=index)) + 
+  labs(x= "Sample", y = "Relative abundance (%)") + 
+  geom_bar(position="fill", stat="identity", width=0.9) +
+  scale_fill_manual(values = col_vector) +
+  scale_y_continuous(labels=scales::percent_format()) + 
+  facet_wrap(~Group, scales = "free_x")+ #Grouping by grape stage 
+  theme_bw() +
+  theme(panel.grid.minor.x=element_blank(), panel.grid.major.x=element_blank(), axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        legend.text = element_text(face = "italic"))
+
+Species_barplot
+
+ggsave("Fig/Species_barplot2.tiff", height=5, width=10, device="tiff")
+```
+
+
+# 4) Summary tables:
+
+```{r}
+
+library(tidyverse)
+library(gt)
+
+###### fix: as.character() on pull() inside make_table
+make_table <- function(data, taxon_col, count_col, n_top = 10) {
+  top_taxa <- data %>%
+    group_by(across(all_of(taxon_col))) %>%
+    summarise(mean_count = mean(.data[[count_col]]), .groups = "drop") %>%
+    arrange(desc(mean_count)) %>%
+    slice_head(n = n_top) %>%
+    pull(1) %>%
+    as.character()
+
+  top_taxa <- top_taxa[top_taxa != "Others"]  ###### fix: drop pre-existing "Others"
+
+  data %>%
+    mutate(taxon = ifelse(as.character(.data[[taxon_col]]) %in% top_taxa,
+                          as.character(.data[[taxon_col]]), "Others")) %>%
+    group_by(taxon) %>%
+    summarise(mean_count = mean(.data[[count_col]]), .groups = "drop") %>%
+    mutate(
+      taxon = factor(taxon, levels = c(top_taxa, "Others")),
+      pct = round(mean_count / sum(mean_count) * 100, 2)
+    ) %>%
+    arrange(taxon) %>%
+    select(Taxon = taxon, `Relative Abundance (%)` = pct)
+}
+
+phylum_tbl <- make_table(Phylum_table_bp, "Phylum", "count") %>% rename(Phylum = Taxon)
+class_tbl <- make_table(Class_table_bp,  "Class",  "count") %>% rename(Class  = Taxon)
+order_tbl <- make_table(Order_table_bp,  "Order",  "count") %>% rename(Order  = Taxon)
+
+
+```
+
+
+
+```{r}
+# Combine into one wide table (padded to same length)
+max_rows <- max(nrow(phylum_tbl), nrow(class_tbl), nrow(order_tbl))
+
+pad_table <- function(df, n) {
+  if (nrow(df) < n) {
+    extra <- data.frame(matrix(NA, n - nrow(df), ncol(df)))
+    colnames(extra) <- colnames(df)
+    df <- bind_rows(df, extra)
+  }
+  df
+}
+
+combined_tbl <- bind_cols(
+  pad_table(phylum_tbl, max_rows),
+  pad_table(class_tbl, max_rows),
+  pad_table(order_tbl, max_rows)
+)
+
+# Display with gt 
+combined_tbl %>%
+  gt() %>%
+  tab_header(
+    title = md("**Relative Abundance of Gut Fungal Communities**"),
+    subtitle = md("Top 10 taxa per taxonomic level (mean across all samples)")
+  ) %>%
+  tab_spanner(label = "Phylum", columns = 1:2, id = "sp_phylum") %>%
+  tab_spanner(label = "Class", columns = 3:4, id = "sp_class")  %>%
+  tab_spanner(label = "Order", columns = 5:6, id = "sp_order")  %>%
+  cols_label(
+    1 ~ "Taxon", 2 ~ "RA (%)",
+    3 ~ "Taxon", 4 ~ "RA (%)",
+    5 ~ "Taxon", 6 ~ "RA (%)"
+  ) %>%
+  tab_style(
+    style = cell_text(style = "italic", color = "grey50"),
+    locations = cells_body(rows = which(combined_tbl[[1]] == "Others" |
+                                        combined_tbl[[3]] == "Others" |
+                                        combined_tbl[[5]] == "Others"))
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "#f5f5f5"),
+    locations = cells_body(rows = seq(1, max_rows, 2))
+  ) %>%
+  fmt_number(columns = where(is.numeric), decimals = 2) %>%
+  sub_missing(missing_text = "") %>%
+  tab_options(
+    table.font.size = 12,
+    heading.align = "center",
+    column_labels.font.weight = "bold",
+    table.border.top.color = "black",
+    table.border.bottom.color = "black",
+    column_labels.border.bottom.color = "black"
+  )
+
+# Save 
+write.csv(phylum_tbl, "Fig/Table_Phylum_abundance.csv", row.names = FALSE)
+write.csv(class_tbl,"Fig/Table_Class_abundance.csv",  row.names = FALSE)
+write.csv(order_tbl, "Fig/Table_Order_abundance.csv",  row.names = FALSE)
+
+
+```
